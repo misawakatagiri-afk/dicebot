@@ -90,23 +90,28 @@ npm start
 
 サーバーごとの設定(システム登録・オリジナル表)は `data/guilds.json` に保存されます。
 
-### 3. クラウドで常時稼働させる(Koyeb の例)
+### 3. クラウドで常時稼働させる(Oracle Cloud 無料枠の例)
 
-自分のマシンを常時稼働させたくない場合は、無料枠のあるPaaSにデプロイできます。
-[Koyeb](https://www.koyeb.com/) の場合:
+自分のマシンを常時稼働させたくない場合は、[Oracle Cloud Always Free](https://www.oracle.com/jp/cloud/free/) の
+無料VM(Ubuntu)で動かせます。VMにSSHでログインして次を実行します:
 
-1. GitHubアカウントでKoyebにサインアップ
-2. 「Create Web Service」→ GitHub からこのリポジトリを選択
-3. インスタンスタイプで **Free** を選択
-4. 環境変数 `DISCORD_TOKEN` にボットのトークンを設定
-5. デプロイ
+```sh
+sudo apt-get update && sudo apt-get install -y git
+git clone https://github.com/misawakatagiri-afk/dicebot.git
+cd dicebot
+sudo bash deploy/setup.sh   # Node.jsインストール→トークン入力→常駐サービス化まで自動
+```
 
-Koyebのヘルスチェックには、`PORT` 環境変数が設定されているときに自動で起動する
-HTTPサーバーが応答します(Koyebは `PORT` を自動設定するので追加設定は不要です)。
+スクリプトが Node.js のインストール、依存パッケージの導入、トークンの設定(`.env`)、
+systemd による常駐化(自動起動・異常時の自動再起動)まで行います。
 
-**注意**: コンテナ型PaaSでは再デプロイ時にファイルが初期化されるため、
-`data/guilds.json` に保存された設定(システム登録・オリジナル表)が消えます。
-設定を永続化したい場合は外部データベース対応が必要です。
+- ログ確認: `journalctl -u dicebot -f`
+- 再起動: `sudo systemctl restart dicebot`
+
+なお、コンテナ型PaaSにデプロイする場合に備えて、`PORT` 環境変数が設定されているときだけ
+ヘルスチェック用のHTTPサーバーが自動起動するようになっています(VPS/VMでは不要なので起動しません)。
+コンテナ型PaaSでは再デプロイ時に `data/guilds.json`(システム登録・オリジナル表)が
+初期化される点に注意してください。VM運用ならこの問題はありません。
 
 ## 開発
 
