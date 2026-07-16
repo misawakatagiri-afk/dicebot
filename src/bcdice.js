@@ -1,6 +1,6 @@
 import bcdice from 'bcdice';
 
-const { DynamicLoader } = bcdice;
+const { DynamicLoader, UserDefinedDiceTable } = bcdice;
 
 const loader = new DynamicLoader();
 const cache = new Map();
@@ -32,6 +32,16 @@ export async function loadGameSystem(id) {
   const GameSystem = await loader.dynamicLoad(id);
   cache.set(id, GameSystem);
   return GameSystem;
+}
+
+/** オリジナル表のテキストが正しい書式かどうかを返す */
+export function validateTable(text) {
+  return new UserDefinedDiceTable(text).validate();
+}
+
+/** オリジナル表を振る。書式が不正なら null を返す */
+export function rollTable(text) {
+  return new UserDefinedDiceTable(text).roll();
 }
 
 /**

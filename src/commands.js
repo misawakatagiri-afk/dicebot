@@ -3,21 +3,35 @@ import { SlashCommandBuilder } from 'discord.js';
 export const commands = [
   new SlashCommandBuilder()
     .setName('system')
-    .setDescription('このサーバーで使うダイスシステムの設定')
+    .setDescription('ダイスシステムの設定')
     .addSubcommand((sub) =>
       sub
         .setName('set')
-        .setDescription('このサーバーで使うダイスシステムを登録する')
+        .setDescription('使用するダイスシステムを登録する')
         .addStringOption((opt) =>
           opt
             .setName('system')
             .setDescription('ゲームシステム名またはID(入力で候補が出ます)')
             .setRequired(true)
             .setAutocomplete(true),
+        )
+        .addStringOption((opt) =>
+          opt
+            .setName('scope')
+            .setDescription('登録範囲(省略時: サーバー全体)')
+            .addChoices(
+              { name: 'サーバー全体', value: 'guild' },
+              { name: 'このチャンネル/スレッドのみ', value: 'channel' },
+            ),
         ),
     )
     .addSubcommand((sub) =>
-      sub.setName('show').setDescription('現在登録されているダイスシステムを表示する'),
+      sub
+        .setName('unset')
+        .setDescription('このチャンネル/スレッドの登録を解除してサーバー設定に戻す'),
+    )
+    .addSubcommand((sub) =>
+      sub.setName('show').setDescription('現在のダイスシステム設定を表示する'),
     )
     .addSubcommand((sub) =>
       sub
@@ -28,10 +42,38 @@ export const commands = [
         ),
     ),
   new SlashCommandBuilder()
+    .setName('table')
+    .setDescription('オリジナルのランダム表の管理')
+    .addSubcommand((sub) =>
+      sub.setName('add').setDescription('オリジナル表を作成・登録する(入力フォームが開きます)'),
+    )
+    .addSubcommand((sub) =>
+      sub.setName('list').setDescription('このサーバーに登録されたオリジナル表の一覧を表示する'),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('show')
+        .setDescription('オリジナル表の内容を表示する')
+        .addStringOption((opt) =>
+          opt.setName('name').setDescription('表の名前').setRequired(true).setAutocomplete(true),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('remove')
+        .setDescription('オリジナル表を削除する')
+        .addStringOption((opt) =>
+          opt.setName('name').setDescription('表の名前').setRequired(true).setAutocomplete(true),
+        ),
+    ),
+  new SlashCommandBuilder()
     .setName('roll')
     .setDescription('ダイスを振る')
     .addStringOption((opt) =>
-      opt.setName('command').setDescription('ダイスコマンド(例: 2d6, CC<=54)').setRequired(true),
+      opt
+        .setName('command')
+        .setDescription('ダイスコマンドまたはオリジナル表の名前(例: 2d6, CC<=54)')
+        .setRequired(true),
     ),
   new SlashCommandBuilder()
     .setName('dicehelp')
