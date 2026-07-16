@@ -1,0 +1,23 @@
+{
+  "name": "dicebot",
+  "version": "1.0.0",
+  "description": "Discord TRPG dice bot powered by BCDice",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node src/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:41729/git/misawakatagiri-afk/dicebot"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "bcdice": "^4.9.0",
+    "discord.js": "^14.27.0",
+    "dotenv": "^17.4.2"
+  }
+}
