@@ -304,7 +304,7 @@ async function handleTableCommand(interaction) {
             .setLabel('表の内容(1行ごとに「出目:結果」)')
             .setStyle(TextInputStyle.Paragraph)
             .setPlaceholder('1:金貨100枚\n2:ポーション\n3:古びた剣\n4:魔法の巻物\n5:宝石\n6:何もなし')
-            .setMaxLength(1800)
+            .setMaxLength(4000)
             .setRequired(true),
         ),
       );
