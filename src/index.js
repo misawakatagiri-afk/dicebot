@@ -66,6 +66,12 @@ function formatResult(result) {
   return truncate(`🎲 ${result.text}`);
 }
 
+/** オリジナル表の結果を整形する(複数回のときは各行に🎲を付けて空行で区切る) */
+function formatTableRolls(results) {
+  if (results.length === 1) return truncate(`🎲 ${results[0]}`);
+  return truncate(results.map((text, i) => `🎲 #${i + 1} ${text}`).join('\n\n'));
+}
+
 /** スレッドなら [スレッドID, 親チャンネルID]、通常チャンネルなら [チャンネルID] を返す */
 function channelIdsOf(channel) {
   if (!channel) return [];
@@ -90,7 +96,7 @@ client.on(Events.MessageCreate, async (message) => {
     // 1. オリジナル表(「表名」「表名x3」「x3 表名」の形式に対応)
     const tableRoll = rollTableCommand(message.guildId, command);
     if (tableRoll) {
-      await message.reply(truncate(`🎲 ${tableRoll}`));
+      await message.reply(formatTableRolls(tableRoll));
       return;
     }
 
@@ -432,7 +438,7 @@ async function handleRollCommand(interaction) {
   // オリジナル表の名前(繰り返し指定つきも可)が指定されたらそれを振る
   const tableRoll = rollTableCommand(interaction.guildId, command);
   if (tableRoll) {
-    await interaction.reply(truncate(`🎲 ${tableRoll}`));
+    await interaction.reply(formatTableRolls(tableRoll));
     return;
   }
 

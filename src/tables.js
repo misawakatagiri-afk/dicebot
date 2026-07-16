@@ -5,7 +5,7 @@ import { getTable } from './store.js';
 const MAX_TABLE_REPEAT = 20;
 
 /**
- * テキストをオリジナル表のコマンドとして解釈して振る。
+ * テキストをオリジナル表のコマンドとして解釈して振り、結果の配列を返す。
  * 「表名」のほか「表名x3」「x3 表名」「rep3 表名」の繰り返し指定に対応。
  * 表が見つからなければ null を返す。
  */
@@ -29,11 +29,11 @@ export function rollTableCommand(guildId, command) {
   if (!text) return null;
 
   count = Math.min(Math.max(count, 1), MAX_TABLE_REPEAT);
-  const lines = [];
+  const results = [];
   for (let i = 0; i < count; i++) {
     const result = rollTable(text);
     if (!result) return null; // 表の書式が壊れている場合
-    lines.push(count === 1 ? result.text : `#${i + 1} ${result.text}`);
+    results.push(result.text);
   }
-  return lines.join('\n');
+  return results;
 }
