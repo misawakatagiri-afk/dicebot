@@ -48,6 +48,17 @@ export const commands = [
       sub.setName('add').setDescription('オリジナル表を作成・登録する(入力フォームが開きます)'),
     )
     .addSubcommand((sub) =>
+      sub
+        .setName('upload')
+        .setDescription('テキストファイルからオリジナル表を登録する(フォームに収まらない大きな表向け)')
+        .addAttachmentOption((opt) =>
+          opt
+            .setName('file')
+            .setDescription('1行目:表の名前、2行目:ダイス(例 1D100)、3行目以降:出目:結果 の.txtファイル')
+            .setRequired(true),
+        ),
+    )
+    .addSubcommand((sub) =>
       sub.setName('list').setDescription('このサーバーに登録されたオリジナル表の一覧を表示する'),
     )
     .addSubcommand((sub) =>

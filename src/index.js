@@ -309,6 +309,46 @@ async function handleTableCommand(interaction) {
     return;
   }
 
+  if (sub === 'upload') {
+    const attachment = interaction.options.getAttachment('file', true);
+    if (attachment.size > 200 * 1024) {
+      await interaction.reply({
+        content: 'ファイルが大きすぎます(上限200KB)。',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    await interaction.deferReply();
+    const res = await fetch(attachment.url);
+    if (!res.ok) {
+      await interaction.editReply('ファイルの取得に失敗しました。もう一度お試しください。');
+      return;
+    }
+    const text = (await res.text()).replace(/^﻿/, '').replace(/\r\n?/g, '\n').trim();
+    const lines = text.split('\n');
+    const name = lines[0]?.trim();
+    if (!name || name.length > 50 || lines.length < 3 || !validateTable(text)) {
+      await interaction.editReply(
+        [
+          'ファイルの書式が正しくありません。次の形式のテキストファイルにしてください:',
+          '```',
+          '表の名前(50文字以内)',
+          '1D100',
+          '1:結果その1',
+          '2:結果その2',
+          '…(ダイスで出うるすべての出目の行)',
+          '```',
+        ].join('\n'),
+      );
+      return;
+    }
+    const overwritten = setTable(interaction.guildId, name, text);
+    await interaction.editReply(
+      `オリジナル表「**${name}**」(${lines[1].trim()}、${lines.length - 2}項目) を${overwritten ? '更新' : '登録'}しました。「${name}」とメッセージを送ると振れます。`,
+    );
+    return;
+  }
+
   if (sub === 'list') {
     const names = Object.keys(getTables(interaction.guildId));
     if (names.length === 0) {
