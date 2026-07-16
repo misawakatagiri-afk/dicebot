@@ -17,10 +17,10 @@ import {
   listGameSystems,
   loadGameSystem,
   roll,
-  rollTable,
   searchGameSystems,
   validateTable,
 } from './bcdice.js';
+import { rollTableCommand } from './tables.js';
 import {
   DEFAULT_SYSTEM_ID,
   clearChannelSystemId,
@@ -87,14 +87,11 @@ client.on(Events.MessageCreate, async (message) => {
   if (!command || command.length > MAX_COMMAND_LENGTH) return;
 
   try {
-    // 1. オリジナル表(名前が完全一致したら振る)
-    const tableText = getTable(message.guildId, command);
-    if (tableText) {
-      const result = rollTable(tableText);
-      if (result) {
-        await message.reply(formatResult(result));
-        return;
-      }
+    // 1. オリジナル表(「表名」「表名x3」「x3 表名」の形式に対応)
+    const tableRoll = rollTableCommand(message.guildId, command);
+    if (tableRoll) {
+      await message.reply(truncate(`🎲 ${tableRoll}`));
+      return;
     }
 
     // 2. ダイスシステムのコマンド
@@ -386,14 +383,11 @@ async function handleTableAddModal(interaction) {
 async function handleRollCommand(interaction) {
   const command = interaction.options.getString('command', true).trim();
 
-  // オリジナル表の名前が指定されたらそれを振る
-  const tableText = getTable(interaction.guildId, command);
-  if (tableText) {
-    const result = rollTable(tableText);
-    if (result) {
-      await interaction.reply(formatResult(result));
-      return;
-    }
+  // オリジナル表の名前(繰り返し指定つきも可)が指定されたらそれを振る
+  const tableRoll = rollTableCommand(interaction.guildId, command);
+  if (tableRoll) {
+    await interaction.reply(truncate(`🎲 ${tableRoll}`));
+    return;
   }
 
   const systemId = resolveSystemId(interaction.guildId, channelIdsOf(interaction.channel));
