@@ -56,6 +56,12 @@ export const commands = [
             .setName('file')
             .setDescription('1行目:表の名前、2行目:ダイス(例 1D100)、3行目以降:出目:結果 の.txtファイル')
             .setRequired(true),
+        )
+        .addStringOption((opt) =>
+          opt
+            .setName('name')
+            .setDescription('表の呼び出し名(省略時はファイルの1行目が使われます)')
+            .setMaxLength(50),
         ),
     )
     .addSubcommand((sub) =>

@@ -324,8 +324,14 @@ async function handleTableCommand(interaction) {
       await interaction.editReply('ファイルの取得に失敗しました。もう一度お試しください。');
       return;
     }
-    const text = (await res.text()).replace(/^﻿/, '').replace(/\r\n?/g, '\n').trim();
-    const lines = text.split('\n');
+    let text = (await res.text()).replace(/^﻿/, '').replace(/\r\n?/g, '\n').trim();
+    const customName = interaction.options.getString('name')?.trim();
+    let lines = text.split('\n');
+    if (customName) {
+      // 呼び出し名の指定があればファイル1行目の名前を差し替える
+      lines = [customName, ...lines.slice(1)];
+      text = lines.join('\n');
+    }
     const name = lines[0]?.trim();
     if (!name || name.length > 50 || lines.length < 3 || !validateTable(text)) {
       await interaction.editReply(
