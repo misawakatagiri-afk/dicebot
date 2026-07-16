@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { createServer } from 'node:http';
 import {
   ActionRowBuilder,
   Client,
@@ -429,3 +430,12 @@ async function handleHelpCommand(interaction) {
 }
 
 client.login(token);
+
+// PaaS(Koyeb など)のヘルスチェック用: PORT が設定されているときだけ HTTP で応答する
+const port = process.env.PORT;
+if (port) {
+  createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('ok');
+  }).listen(port, () => console.log(`ヘルスチェックサーバーを起動しました (port ${port})`));
+}
