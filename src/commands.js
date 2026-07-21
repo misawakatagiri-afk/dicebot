@@ -84,6 +84,31 @@ export const commands = [
         ),
     ),
   new SlashCommandBuilder()
+    .setName('macro')
+    .setDescription('複数のダイスをまとめて振るマクロの管理(能力値振りなど)')
+    .addSubcommand((sub) =>
+      sub.setName('add').setDescription('マクロを作成・登録する(入力フォームが開きます)'),
+    )
+    .addSubcommand((sub) =>
+      sub.setName('list').setDescription('このサーバーに登録されたマクロの一覧を表示する'),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('show')
+        .setDescription('マクロの内容を表示する')
+        .addStringOption((opt) =>
+          opt.setName('name').setDescription('マクロの名前').setRequired(true).setAutocomplete(true),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('remove')
+        .setDescription('マクロを削除する')
+        .addStringOption((opt) =>
+          opt.setName('name').setDescription('マクロの名前').setRequired(true).setAutocomplete(true),
+        ),
+    ),
+  new SlashCommandBuilder()
     .setName('roll')
     .setDescription('ダイスを振る')
     .addStringOption((opt) =>

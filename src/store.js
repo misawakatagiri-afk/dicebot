@@ -107,4 +107,32 @@ export function removeTable(guildId, name) {
   return true;
 }
 
+/** サーバーに登録されたマクロの一覧 { name: text } */
+export function getMacros(guildId) {
+  return entry(guildId).macros ?? {};
+}
+
+/** マクロを名前で取得する */
+export function getMacro(guildId, name) {
+  return getMacros(guildId)[name];
+}
+
+/** マクロを登録(同名なら上書き)する。上書きだったら true */
+export function setMacro(guildId, name, text) {
+  const macros = { ...entry(guildId).macros };
+  const overwritten = name in macros;
+  macros[name] = text;
+  update(guildId, { macros });
+  return overwritten;
+}
+
+/** マクロを削除する。削除できたら true */
+export function removeMacro(guildId, name) {
+  const macros = { ...entry(guildId).macros };
+  if (!(name in macros)) return false;
+  delete macros[name];
+  update(guildId, { macros });
+  return true;
+}
+
 load();

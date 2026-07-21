@@ -21,17 +21,22 @@ import {
   validateTable,
 } from './bcdice.js';
 import { rollTableCommand } from './tables.js';
+import { parseMacro, runMacro } from './macros.js';
 import {
   DEFAULT_SYSTEM_ID,
   clearChannelSystemId,
   getChannelOverrides,
   getGuildSystemId,
+  getMacro,
+  getMacros,
   getTable,
   getTables,
+  removeMacro,
   removeTable,
   resolveSystemId,
   setChannelSystemId,
   setGuildSystemId,
+  setMacro,
   setTable,
 } from './store.js';
 
@@ -47,6 +52,7 @@ const MAX_COMMAND_LENGTH = 200;
 const MAX_MESSAGE_LENGTH = 2000;
 
 const TABLE_ADD_MODAL_ID = 'table-add';
+const MACRO_ADD_MODAL_ID = 'macro-add';
 
 const client = new Client({
   intents: [
@@ -100,8 +106,20 @@ client.on(Events.MessageCreate, async (message) => {
       return;
     }
 
-    // 2. ダイスシステムのコマンド
     const systemId = resolveSystemId(message.guildId, channelIdsOf(message.channel));
+
+    // 2. マクロ(名前が一致したら複数のダイスをまとめて振る)
+    const macroText = getMacro(message.guildId, command);
+    if (macroText) {
+      const entries = parseMacro(macroText);
+      const macroResult = entries && (await runMacro(systemId, entries));
+      if (macroResult) {
+        await message.reply(truncate(`🎲 **${command}**\n${macroResult.join('\n')}`));
+        return;
+      }
+    }
+
+    // 3. ダイスシステムのコマンド
     const result = await roll(systemId, command);
     if (!result) return; // ダイスコマンドではない普通のメッセージ
 
@@ -127,6 +145,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await handleCommand(interaction);
     } else if (interaction.isModalSubmit() && interaction.customId === TABLE_ADD_MODAL_ID) {
       await handleTableAddModal(interaction);
+    } else if (interaction.isModalSubmit() && interaction.customId === MACRO_ADD_MODAL_ID) {
+      await handleMacroAddModal(interaction);
     }
   } catch (err) {
     console.error('インタラクションの処理に失敗しました', err);
@@ -145,9 +165,13 @@ async function handleAutocomplete(interaction) {
     const matches = focused.value ? searchGameSystems(focused.value) : listGameSystems();
     choices = matches.map((s) => ({ name: truncate(`${s.name} (${s.id})`, 100), value: s.id }));
   } else {
-    // オリジナル表の名前
+    // オリジナル表またはマクロの名前
+    const source =
+      interaction.commandName === 'macro'
+        ? getMacros(interaction.guildId)
+        : getTables(interaction.guildId);
     const q = focused.value.toLowerCase();
-    choices = Object.keys(getTables(interaction.guildId))
+    choices = Object.keys(source)
       .filter((name) => name.toLowerCase().includes(q))
       .map((name) => ({ name: truncate(name, 100), value: name }));
   }
@@ -161,6 +185,9 @@ async function handleCommand(interaction) {
       break;
     case 'table':
       await handleTableCommand(interaction);
+      break;
+    case 'macro':
+      await handleMacroCommand(interaction);
       break;
     case 'roll':
       await handleRollCommand(interaction);
@@ -432,6 +459,121 @@ async function handleTableAddModal(interaction) {
   );
 }
 
+async function handleMacroCommand(interaction) {
+  if (!(await requireGuild(interaction))) return;
+  const sub = interaction.options.getSubcommand();
+
+  if (sub === 'add') {
+    const modal = new ModalBuilder()
+      .setCustomId(MACRO_ADD_MODAL_ID)
+      .setTitle('マクロの登録')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('name')
+            .setLabel('マクロの名前(この名前を入力すると実行されます)')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('サイオン')
+            .setMaxLength(50)
+            .setRequired(true),
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('lines')
+            .setLabel('内容(1行ごとに「ラベル:コマンド:最低値」最低値は省略可)')
+            .setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder('肉体:2D10+25:35\n精神:2D10+10:20\n環境:2D10+10:20')
+            .setMaxLength(1500)
+            .setRequired(true),
+        ),
+      );
+    await interaction.showModal(modal);
+    return;
+  }
+
+  if (sub === 'list') {
+    const names = Object.keys(getMacros(interaction.guildId));
+    if (names.length === 0) {
+      await interaction.reply({
+        content: 'マクロはまだ登録されていません。`/macro add` で作成できます。',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    await interaction.reply({
+      content: truncate(
+        `登録されているマクロ (${names.length} 件):\n${names.map((n) => `- ${n}`).join('\n')}\nマクロの名前をメッセージで送ると実行されます。`,
+      ),
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  if (sub === 'show') {
+    const name = interaction.options.getString('name', true);
+    const text = getMacro(interaction.guildId, name);
+    if (!text) {
+      await interaction.reply({
+        content: `マクロ「${name}」は登録されていません。`,
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    await interaction.reply({
+      content: truncate(`**${name}**\n\`\`\`\n${text}\n\`\`\``),
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  if (sub === 'remove') {
+    const name = interaction.options.getString('name', true);
+    const removed = removeMacro(interaction.guildId, name);
+    await interaction.reply(
+      removed
+        ? `マクロ「${name}」を削除しました。`
+        : { content: `マクロ「${name}」は登録されていません。`, flags: MessageFlags.Ephemeral },
+    );
+  }
+}
+
+async function handleMacroAddModal(interaction) {
+  const name = interaction.fields.getTextInputValue('name').trim();
+  const linesText = interaction.fields.getTextInputValue('lines').trim();
+
+  const entries = parseMacro(linesText);
+  if (!entries) {
+    await interaction.reply({
+      content: [
+        'マクロの書式が正しくありません。1行ごとに次の形式で書いてください:',
+        '```',
+        'ラベル:ダイスコマンド:最低値',
+        '例) 肉体:2D10+25:35',
+        '例) 精神:2D10+10      ← 最低値は省略可',
+        '```',
+      ].join('\n'),
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  // 各コマンドが実際に振れるか確認してから登録する
+  const test = await runMacro(DEFAULT_SYSTEM_ID, entries);
+  if (!test) {
+    await interaction.reply({
+      content:
+        'ダイスコマンドとして解釈できない行があります。コマンド部分(例: 2D10+25)を確認してください。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const overwritten = setMacro(interaction.guildId, name, linesText);
+  await interaction.reply(
+    `マクロ「**${name}**」(${entries.length}行) を${overwritten ? '更新' : '登録'}しました。「${name}」とメッセージを送ると実行されます。`,
+  );
+}
+
 async function handleRollCommand(interaction) {
   const command = interaction.options.getString('command', true).trim();
 
@@ -443,6 +585,17 @@ async function handleRollCommand(interaction) {
   }
 
   const systemId = resolveSystemId(interaction.guildId, channelIdsOf(interaction.channel));
+
+  // マクロ名が指定されたらまとめて振る
+  const macroText = getMacro(interaction.guildId, command);
+  if (macroText) {
+    const entries = parseMacro(macroText);
+    const macroResult = entries && (await runMacro(systemId, entries));
+    if (macroResult) {
+      await interaction.reply(truncate(`🎲 **${command}**\n${macroResult.join('\n')}`));
+      return;
+    }
+  }
   const result = await roll(systemId, command);
   if (!result) {
     await interaction.reply({
