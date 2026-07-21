@@ -118,6 +118,27 @@ export const commands = [
         .setRequired(true),
     ),
   new SlashCommandBuilder()
+    .setName('backup')
+    .setDescription('設定(システム・表・マクロ)のバックアップ')
+    .addSubcommand((sub) =>
+      sub
+        .setName('set')
+        .setDescription('このチャンネルをバックアップの送信先にする(設定変更のたび自動送信)'),
+    )
+    .addSubcommand((sub) => sub.setName('off').setDescription('自動バックアップを無効にする'))
+    .addSubcommand((sub) => sub.setName('now').setDescription('今すぐバックアップを送信する'))
+    .addSubcommand((sub) =>
+      sub
+        .setName('restore')
+        .setDescription('バックアップファイルから設定を復元する')
+        .addAttachmentOption((opt) =>
+          opt
+            .setName('file')
+            .setDescription('バックアップのJSONファイル')
+            .setRequired(true),
+        ),
+    ),
+  new SlashCommandBuilder()
     .setName('dicehelp')
-    .setDescription('現在のダイスシステムのコマンド一覧を表示する'),
+    .setDescription('現在のダイスシステムと使えるコマンドの一覧を表示する'),
 ].map((c) => c.toJSON());

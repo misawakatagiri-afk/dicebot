@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { createServer } from 'node:http';
 import {
   ActionRowBuilder,
+  AttachmentBuilder,
   Client,
   Events,
   GatewayIntentBits,
@@ -24,16 +25,22 @@ import { rollTableCommand } from './tables.js';
 import { parseMacro, runMacro } from './macros.js';
 import {
   DEFAULT_SYSTEM_ID,
+  clearBackupChannelId,
   clearChannelSystemId,
+  getBackupChannelId,
   getChannelOverrides,
+  getGuildEntry,
   getGuildSystemId,
   getMacro,
   getMacros,
   getTable,
   getTables,
+  onSettingsChange,
   removeMacro,
   removeTable,
+  replaceGuildEntry,
   resolveSystemId,
+  setBackupChannelId,
   setChannelSystemId,
   setGuildSystemId,
   setMacro,
@@ -83,6 +90,67 @@ function channelIdsOf(channel) {
   if (!channel) return [];
   if (channel.isThread?.()) return [channel.id, channel.parentId];
   return [channel.id];
+}
+
+// 設定が変わったら少し待ってからバックアップを送る(連続した変更を1回にまとめる)
+const BACKUP_DELAY_MS = 60_000;
+const backupTimers = new Map();
+
+onSettingsChange((guildId) => {
+  if (!guildId || !getBackupChannelId(guildId)) return;
+  clearTimeout(backupTimers.get(guildId));
+  backupTimers.set(
+    guildId,
+    setTimeout(() => {
+      backupTimers.delete(guildId);
+      sendBackup(guildId).catch((err) => console.error('バックアップの送信に失敗しました', err));
+    }, BACKUP_DELAY_MS),
+  );
+});
+
+/** サーバーの設定をバックアップチャンネルへJSONファイルとして送る */
+async function sendBackup(guildId) {
+  const channelId = getBackupChannelId(guildId);
+  if (!channelId) return false;
+  const entry = getGuildEntry(guildId);
+  delete entry.backupChannelId; // 送信先自体はバックアップに含めない
+  const json = JSON.stringify(entry, null, 2);
+  const channel = await client.channels.fetch(channelId);
+  const date = new Date().toISOString().slice(0, 10);
+  const tableCount = Object.keys(entry.tables ?? {}).length;
+  const macroCount = Object.keys(entry.macros ?? {}).length;
+  await channel.send({
+    content: `⚙️ 設定バックアップ(表 ${tableCount} 件・マクロ ${macroCount} 件)。\`/backup restore\` にこのファイルを添付すると復元できます。`,
+    files: [new AttachmentBuilder(Buffer.from(json, 'utf8'), { name: `dicebot-backup-${date}.json` })],
+  });
+  return true;
+}
+
+/** 復元用JSONから安全な項目だけを取り出す。形式が不正なら null */
+function sanitizeBackup(raw) {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+  const out = {};
+  if (typeof raw.systemId === 'string' && findGameSystem(raw.systemId)) {
+    out.systemId = raw.systemId;
+  }
+  if (raw.channels && typeof raw.channels === 'object' && !Array.isArray(raw.channels)) {
+    const channels = {};
+    for (const [channelId, systemId] of Object.entries(raw.channels)) {
+      if (typeof systemId === 'string' && findGameSystem(systemId)) channels[channelId] = systemId;
+    }
+    out.channels = channels;
+  }
+  for (const key of ['tables', 'macros']) {
+    const src = raw[key];
+    if (src && typeof src === 'object' && !Array.isArray(src)) {
+      const clean = {};
+      for (const [name, text] of Object.entries(src)) {
+        if (typeof text === 'string') clean[name] = text;
+      }
+      out[key] = clean;
+    }
+  }
+  return out;
 }
 
 client.once(Events.ClientReady, async (c) => {
@@ -188,6 +256,9 @@ async function handleCommand(interaction) {
       break;
     case 'macro':
       await handleMacroCommand(interaction);
+      break;
+    case 'backup':
+      await handleBackupCommand(interaction);
       break;
     case 'roll':
       await handleRollCommand(interaction);
@@ -574,6 +645,87 @@ async function handleMacroAddModal(interaction) {
   );
 }
 
+async function handleBackupCommand(interaction) {
+  if (!(await requireGuild(interaction))) return;
+  const sub = interaction.options.getSubcommand();
+
+  if (sub === 'set') {
+    setBackupChannelId(interaction.guildId, interaction.channelId);
+    await interaction.reply(
+      `<#${interaction.channelId}> をバックアップの送信先に設定しました。設定(システム・表・マクロ)が変更されるたび、約1分後に自動でバックアップファイルが送られます。`,
+    );
+    return;
+  }
+
+  if (sub === 'off') {
+    const cleared = clearBackupChannelId(interaction.guildId);
+    await interaction.reply(
+      cleared
+        ? '自動バックアップを無効にしました。'
+        : { content: '自動バックアップは設定されていません。', flags: MessageFlags.Ephemeral },
+    );
+    return;
+  }
+
+  if (sub === 'now') {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const sent = await sendBackup(interaction.guildId);
+    await interaction.editReply(
+      sent
+        ? 'バックアップを送信しました。'
+        : '送信先が未設定です。バックアップ用チャンネルで `/backup set` を実行してください。',
+    );
+    return;
+  }
+
+  if (sub === 'restore') {
+    const attachment = interaction.options.getAttachment('file', true);
+    if (attachment.size > 1024 * 1024) {
+      await interaction.reply({
+        content: 'ファイルが大きすぎます(上限1MB)。',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    await interaction.deferReply();
+    const res = await fetch(attachment.url);
+    if (!res.ok) {
+      await interaction.editReply('ファイルの取得に失敗しました。もう一度お試しください。');
+      return;
+    }
+    let restored;
+    try {
+      restored = sanitizeBackup(JSON.parse(await res.text()));
+    } catch {
+      restored = null;
+    }
+    if (!restored) {
+      await interaction.editReply(
+        'バックアップファイルとして読み込めませんでした。`/backup now` で出力されたJSONファイルを添付してください。',
+      );
+      return;
+    }
+    // 現在のバックアップ送信先設定は引き継ぐ
+    const backupChannelId = getBackupChannelId(interaction.guildId);
+    replaceGuildEntry(interaction.guildId, {
+      ...restored,
+      ...(backupChannelId ? { backupChannelId } : {}),
+    });
+    const systemName = restored.systemId
+      ? (findGameSystem(restored.systemId)?.name ?? restored.systemId)
+      : '(変更なし・標準ダイス)';
+    await interaction.editReply(
+      [
+        '設定を復元しました。',
+        `- ダイスシステム: ${systemName}`,
+        `- チャンネル/スレッドごとの登録: ${Object.keys(restored.channels ?? {}).length} 件`,
+        `- オリジナル表: ${Object.keys(restored.tables ?? {}).length} 件`,
+        `- マクロ: ${Object.keys(restored.macros ?? {}).length} 件`,
+      ].join('\n'),
+    );
+  }
+}
+
 async function handleRollCommand(interaction) {
   const command = interaction.options.getString('command', true).trim();
 
@@ -615,16 +767,39 @@ async function handleHelpCommand(interaction) {
   const GameSystem = await loadGameSystem(systemId);
   const system = findGameSystem(systemId);
   const lines = [
-    `**${system?.name ?? systemId}** (\`${systemId}\`) のコマンド:`,
+    `## このチャンネルのダイスシステム: **${system?.name ?? systemId}** (\`${systemId}\`)`,
     '```',
     GameSystem.HELP_MESSAGE.trim(),
     '```',
-    `※ ${DEFAULT_SYSTEM_ID} 共通のコマンド(2d6 や 1d100+5 など)もいつでも使えます。`,
+    `共通コマンド(どのシステムでも可): \`2d6\` \`1d100+5\` \`choice[A,B,C]\` など。\`S\`を頭に付けるとシークレットダイス(例: \`S1d100\`)。\`x3 2d6\` で繰り返し。`,
   ];
+
   const tableNames = Object.keys(getTables(interaction.guildId));
   if (tableNames.length > 0) {
-    lines.push(`※ オリジナル表: ${tableNames.map((n) => `「${n}」`).join(' ')}(名前を送ると振れます)`);
+    lines.push(
+      '',
+      `## オリジナル表 (${tableNames.length} 件) — 名前を送ると振れます`,
+      tableNames.map((n) => `「${n}」`).join(' '),
+      `\`x3 表名\` または \`表名x3\` で複数回。内容の確認は \`/table show\`。`,
+    );
   }
+
+  const macroNames = Object.keys(getMacros(interaction.guildId));
+  if (macroNames.length > 0) {
+    lines.push(
+      '',
+      `## マクロ (${macroNames.length} 件) — 名前を送るとまとめてロール`,
+      macroNames.map((n) => `「${n}」`).join(' '),
+      `内容の確認は \`/macro show\`。`,
+    );
+  }
+
+  lines.push(
+    '',
+    '## 主な管理コマンド',
+    '`/system set` システム変更(サーバー/チャンネル別) ・ `/table add`/`upload` 表の登録 ・ `/macro add` マクロの登録 ・ `/backup set` 自動バックアップ',
+  );
+
   await interaction.reply({ content: truncate(lines.join('\n')), flags: MessageFlags.Ephemeral });
 }
 

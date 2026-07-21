@@ -32,9 +32,18 @@ function entry(guildId) {
   return settings.get(guildId) ?? {};
 }
 
+// 設定変更時のリスナー(自動バックアップなどに使う)
+let changeListener = null;
+
+/** 設定が変更されたときに呼ばれるリスナーを登録する(引数: guildId) */
+export function onSettingsChange(listener) {
+  changeListener = listener;
+}
+
 function update(guildId, patch) {
   settings.set(guildId, { ...entry(guildId), ...patch });
   save();
+  changeListener?.(guildId);
 }
 
 /** サーバー全体のダイスシステムIDを返す(未登録なら既定値) */
@@ -133,6 +142,38 @@ export function removeMacro(guildId, name) {
   delete macros[name];
   update(guildId, { macros });
   return true;
+}
+
+/** バックアップ送信先チャンネルID(未設定なら null) */
+export function getBackupChannelId(guildId) {
+  return entry(guildId).backupChannelId ?? null;
+}
+
+/** バックアップ送信先チャンネルを設定する */
+export function setBackupChannelId(guildId, channelId) {
+  update(guildId, { backupChannelId: channelId });
+}
+
+/** バックアップ送信先の設定を解除する。解除できたら true */
+export function clearBackupChannelId(guildId) {
+  const e = { ...entry(guildId) };
+  if (!e.backupChannelId) return false;
+  delete e.backupChannelId;
+  settings.set(guildId, e);
+  save();
+  return true;
+}
+
+/** サーバーの設定全体のコピーを返す(バックアップ用) */
+export function getGuildEntry(guildId) {
+  return { ...entry(guildId) };
+}
+
+/** サーバーの設定全体を置き換える(復元用) */
+export function replaceGuildEntry(guildId, newEntry) {
+  settings.set(guildId, newEntry);
+  save();
+  changeListener?.(guildId);
 }
 
 load();
