@@ -112,7 +112,7 @@ client.on(Events.MessageCreate, async (message) => {
     const macroText = getMacro(message.guildId, command);
     if (macroText) {
       const entries = parseMacro(macroText);
-      const macroResult = entries && (await runMacro(systemId, entries));
+      const macroResult = entries && (await runMacro(message.guildId, systemId, entries));
       if (macroResult) {
         await message.reply(truncate(`🎲 **${command}**\n${macroResult.join('\n')}`));
         return;
@@ -558,7 +558,7 @@ async function handleMacroAddModal(interaction) {
   }
 
   // 各コマンドが実際に振れるか確認してから登録する
-  const test = await runMacro(DEFAULT_SYSTEM_ID, entries);
+  const test = await runMacro(interaction.guildId, DEFAULT_SYSTEM_ID, entries);
   if (!test) {
     await interaction.reply({
       content:
@@ -590,7 +590,7 @@ async function handleRollCommand(interaction) {
   const macroText = getMacro(interaction.guildId, command);
   if (macroText) {
     const entries = parseMacro(macroText);
-    const macroResult = entries && (await runMacro(systemId, entries));
+    const macroResult = entries && (await runMacro(interaction.guildId, systemId, entries));
     if (macroResult) {
       await interaction.reply(truncate(`🎲 **${command}**\n${macroResult.join('\n')}`));
       return;

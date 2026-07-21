@@ -1,4 +1,5 @@
 import { roll } from './bcdice.js';
+import { rollTableCommand } from './tables.js';
 
 /**
  * マクロ定義のテキストを解析する。
@@ -30,12 +31,25 @@ export function parseMacro(text) {
 
 /**
  * マクロを実行して結果行の配列を返す。
+ * コマンド部分にはBCDiceのダイスコマンドのほか、登録済みオリジナル表の名前
+ * (「x2 表名」の繰り返し指定つきも可)を書ける。
  * 合計値が最低値を下回った場合は最低値に切り上げた旨を表示する。
- * いずれかのコマンドが評価できなければ null を返す。
+ * いずれかの行が評価できなければ null を返す。
  */
-export async function runMacro(systemId, entries) {
+export async function runMacro(guildId, systemId, entries) {
   const lines = [];
   for (const entry of entries) {
+    // オリジナル表の名前ならそれを振る
+    const tableResults = rollTableCommand(guildId, entry.command);
+    if (tableResults) {
+      if (tableResults.length === 1) {
+        lines.push(`${entry.label}: ${tableResults[0]}`);
+      } else {
+        tableResults.forEach((text, i) => lines.push(`${entry.label} #${i + 1}: ${text}`));
+      }
+      continue;
+    }
+
     const result = await roll(systemId, entry.command);
     if (!result) return null;
     let text = result.text;
