@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SW2.5 成長処理ツール</title>
+<style>
+  :root {
+    --bg: #fafafa; --fg: #222; --line: #888; --head: #1a5fb4;
+    --sel: #4caf50; --sel-row: #b6e2b6; --btn: #fff; --muted: #666;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; font-family: system-ui, "Segoe UI", "Hiragino Sans", "Meiryo", sans-serif; font-size: 14px; background: var(--bg); color: var(--fg); }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  h2 { font-size: 15px; margin: 18px 0 6px; border-left: 4px solid var(--head); padding-left: 8px; }
+  .panel { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+  input[type=text], input[type=url], textarea { width: 100%; padding: 6px; border: 1px solid #aaa; border-radius: 4px; font: inherit; }
+  textarea { min-height: 80px; resize: vertical; }
+  input[type=number] { width: 56px; padding: 4px; text-align: center; border: 1px solid #aaa; border-radius: 3px; font: inherit; }
+  button { font: inherit; padding: 5px 12px; border: 1px solid #888; border-radius: 4px; background: #f3f3f3; cursor: pointer; }
+  button:hover { background: #e6e6e6; }
+  button.primary { background: var(--head); color: #fff; border-color: var(--head); }
+  button.primary:hover { background: #164e93; }
+  .msg { color: var(--muted); font-size: 12px; }
+  .msg.error { color: #c00; }
+  .charinfo { font-weight: bold; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+
+  table.grow { border-collapse: collapse; width: 100%; max-width: 760px; }
+  table.grow th, table.grow td { border: 1px solid var(--line); text-align: center; padding: 2px; height: 30px; }
+  table.grow th { color: var(--head); text-decoration: underline; font-weight: bold; }
+  table.grow th.dice { cursor: pointer; }
+  table.grow td.num { width: 60px; }
+  table.grow tr.done td { background: var(--sel-row); }
+  table.grow tr.done td.num { font-weight: bold; }
+  .cell-btn { width: 78px; height: 24px; border: 1px solid #333; background: var(--btn); border-radius: 3px; cursor: pointer; font: inherit; }
+  .cell-btn:hover { background: #eef; }
+  .cell-btn.on { background: var(--sel); border-color: #2e7d32; color: #fff; font-weight: bold; }
+  .cell-btn.fixed { border-style: dashed; }
+  tr.done .cell-btn:not(.on) { visibility: hidden; }
+
+  table.sum { border-collapse: collapse; margin-top: 12px; }
+  table.sum th, table.sum td { padding: 4px 8px; text-align: center; min-width: 84px; }
+  table.sum th { text-align: right; font-weight: normal; color: var(--muted); }
+  table.sum tr.init td { background: #edf7ed; }
+  table.sum tr.total td { border-top: 2px solid #999; font-weight: bold; }
+  table.sum td.up { color: #2e7d32; font-weight: bold; }
+  .stat-label { font-weight: bold; }
+  .hint { font-size: 12px; color: var(--muted); }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; align-items: center; }
+  pre.out { background: #f4f4f4; border: 1px solid #ddd; padding: 8px; white-space: pre-wrap; margin: 6px 0; }
+  .sticky { position: sticky; top: 0; background: #fff; z-index: 2; }
+  @media (max-width: 700px) { .cell-btn { width: 56px; font-size: 12px; } table.grow td.num { width: 40px; } }
+</style>
+</head>
+<body>
+<h1>ソードワールド2.5 成長処理ツール</h1>
+
+<div class="panel">
+  <h2>1. キャラクターシートを読み込む（ゆとシート）</h2>
+  <div class="row">
+    <input type="url" id="sheetUrl" placeholder="https://yutorize.work/ytsheet/sw2.5/?id=XXXXXX" style="flex:1; min-width: 260px;">
+    <button class="primary" id="btnLoad">読み込み</button>
+  </div>
+  <div id="loadMsg" class="msg">ゆとシートのURLを貼り付けて「読み込み」を押すと、A～Fの初期値・成長値・技体心を取り込みます。</div>
+  <div id="charInfo" class="charinfo"></div>
+  <details>
+    <summary>URLから読み込めない場合（JSONを直接貼り付け）</summary>
+    <p class="hint">ゆとシートのURL末尾に <code>&amp;mode=json</code> を付けて開き、表示された内容をすべてコピーしてここに貼り付けてください。</p>
+    <textarea id="sheetJson" placeholder='{"characterName":"...","sttDex":"12", ...}'></textarea>
+    <div class="row"><button id="btnJson">JSONから読み込み</button></div>
+  </details>
+</div>
+
+<div class="panel">
+  <h2>2. 成長ダイスログを貼り付ける（BCDice の GR コマンド結果）</h2>
+  <textarea id="diceLog" placeholder="#1 [3,5]->(筋力 or 知力) #2 [4,6]->(生命力 or 精神力) ..."></textarea>
+  <div class="row">
+    <button class="primary" id="btnParse">表を生成</button>
+    <span id="parseMsg" class="msg"></span>
+  </div>
+</div>
+
+<div class="panel" id="growPanel" hidden>
+  <h2>3. ボタンを押して能力値を割り振る</h2>
+  <div class="toolbar">
+    <button id="btnAutoSingle">選択肢が1つの行を自動確定</button>
+    <button id="btnClear">全解除</button>
+    <span class="hint">セルのボタンを押すと選択、もう一度押すと解除。ヘッダーの「dice▼」で並び順を切り替え。</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="grow" id="growTable">
+    <thead><tr class="sticky"><th class="dice" id="thDice" title="並び替え">dice▼</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  </div>
+  <div class="toolbar"><button id="btnTop" onclick="window.scrollTo({top:0,behavior:'smooth'})">上部へ戻る</button></div>
+
+  <div style="overflow-x:auto">
+  <table class="sum" id="sumTable"></table>
+  </div>
+  <div class="hint" style="margin-top:6px">合計＝技/体/心＋初期値(A～F)＋成長。ボーナス＝合計÷6（切り捨て）、( )内は次のボーナスまでの残り。<br>成長値には既存の成長分（ゆとシートの成長欄）と今回の割り振りが含まれます。</div>
+
+  <h2>4. 結果</h2>
+  <div class="toolbar">
+    <button class="primary" id="btnCopy">結果をコピー</button>
+    <span id="copyMsg" class="msg"></span>
+  </div>
+  <pre class="out" id="resultOut"></pre>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---- 能力値定義 -----------------------------------------------------------
+  // key: 内部キー, name: 表示名, log: ダイスログ上の名前, base: 技/体/心, letter: A～F
+  const STATS = [
+    { key: 'dex', name: '器用', log: '器用度', base: 'tec',  letter: 'A' },
+    { key: 'agi', name: '敏捷', log: '敏捷度', base: 'tec',  letter: 'B' },
+    { key: 'str', name: '筋力', log: '筋力',   base: 'body', letter: 'C' },
+    { key: 'vit', name: '生命', log: '生命力', base: 'body', letter: 'D' },
+    { key: 'int', name: '知力', log: '知力',   base: 'mind', letter: 'E' },
+    { key: 'mnd', name: '精神', log: '精神力', base: 'mind', letter: 'F' },
+  ];
+  const BASES = [
+    { key: 'tec',  name: '技' },
+    { key: 'body', name: '体' },
+    { key: 'mind', name: '心' },
+  ];
+  const LOG_TO_KEY = Object.fromEntries(STATS.map(s => [s.log, s.key]));
+  // 略称や表記ゆれも受け付ける
+  Object.assign(LOG_TO_KEY, { '器用': 'dex', '敏捷': 'agi', '生命': 'vit', '精神': 'mnd' });
+
+  // ---- 状態 ------------------------------------------------------------------
+  const state = {
+    charName: '',
+    base: { tec: 0, body: 0, mind: 0 },          // 技/体/心
+    init: { dex: 0, agi: 0, str: 0, vit: 0, int: 0, mnd: 0 },   // A～F 初期値
+    grown: { dex: 0, agi: 0, str: 0, vit: 0, int: 0, mnd: 0 },  // 既存の成長分
+    rows: [],          // { no, dice:[a,b], choices:[key...], picked: key|null }
+    sortAsc: true,
+  };
+
+  const $ = id => document.getElementById(id);
+  const toInt = v => { const n = parseInt(String(v ?? '').trim(), 10); return Number.isFinite(n) ? n : 0; };
+
+  // ---- ゆとシート読み込み -------------------------------------------------------
+  function toJsonUrl(input) {
+    const u = new URL(input.trim());
+    if (!u.searchParams.get('id')) throw new Error('URLに id= が含まれていません');
+    u.searchParams.set('mode', 'json');
+    u.hash = '';
+    return u.toString();
+  }
+
+  // 複数のキー候補から最初に存在するものを返す
+  function pick(json, candidates) {
+    for (const k of candidates) if (json[k] !== undefined && json[k] !== '') return json[k];
+    return undefined;
+  }
+
+  function applySheet(json) {
+    if (!json || typeof json !== 'object') throw new Error('JSONの形式が不正です');
+    const cap = k => k.charAt(0).toUpperCase() + k.slice(1);
+    state.charName = pick(json, ['characterName', 'name', 'charaName']) || '';
+    state.base.tec  = toInt(pick(json, ['sttBaseTec',  'sttTec',  'baseTec']));
+    state.base.body = toInt(pick(json, ['sttBaseBody', 'sttBody', 'baseBody']));
+    state.base.mind = toInt(pick(json, ['sttBaseMind', 'sttMind', 'baseMind']));
+    let found = 0;
+    for (const s of STATS) {
+      const K = cap(s.key);
+      const init = pick(json, [`stt${K}`, `sttBase${K}`, `stt${s.letter}`, `status${s.letter}`, `sttInit${K}`]);
+      if (init !== undefined) found++;
+      state.init[s.key]  = toInt(init);
+      state.grown[s.key] = toInt(pick(json, [`sttGrow${K}`, `grow${K}`, `sttGrowth${K}`]));
+    }
+    if (found === 0) {
+      throw new Error('能力値のキー（sttDex 等）が見つかりません。SW2.5のゆとシートのJSONか確認してください');
+    }
+    const parts = [];
+    if (state.charName) parts.push(state.charName);
+    const lv = pick(json, ['level', 'lv']);
+    if (lv !== undefined) parts.push(`Lv${lv}`);
+    const race = pick(json, ['race']);
+    if (race) parts.push(race);
+    $('charInfo').textContent = parts.join(' / ');
+    renderSummary();
+    updateResult();
+  }
+
+  async function loadFromUrl() {
+    const msg = $('loadMsg');
+    msg.className = 'msg';
+    let url;
+    try { url = toJsonUrl($('sheetUrl').value); }
+    catch (e) { msg.className = 'msg error'; msg.textContent = 'URLが正しくありません: ' + e.message; return; }
+    msg.textContent = '読み込み中...';
+    try {
+      const res = await fetch(url, { mode: 'cors' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      applySheet(json);
+      msg.textContent = '読み込みました。初期値・成長値は下の表で手動修正もできます。';
+    } catch (e) {
+      msg.className = 'msg error';
+      msg.textContent = '読み込みに失敗しました（' + e.message + '）。下の「JSONを直接貼り付け」から取り込んでください。';
+    }
+  }
+
+  function loadFromJsonText() {
+    const msg = $('loadMsg');
+    try {
+      const text = $('sheetJson').value.trim();
+      applySheet(JSON.parse(text));
+      msg.className = 'msg';
+      msg.textContent = 'JSONから読み込みました。';
+    } catch (e) {
+      msg.className = 'msg error';
+      msg.textContent = 'JSONの読み込みに失敗しました: ' + e.message;
+    }
+  }
+
+  // ---- ダイスログ解析 -------------------------------------------------------
+  // 例: "#1 [3,5]->(筋力 or 知力)"  "#9 [6,6]->(精神力)"
+  const ROW_RE = /#\s*(\d+)\s*\[\s*(\d)\s*[,、]\s*(\d)\s*\]\s*(?:->|→|＞|>)?\s*[（(]([^()（）]+)[）)]/g;
+
+  function parseLog(text) {
+    const rows = [];
+    const unknown = new Set();
+    for (const m of text.matchAll(ROW_RE)) {
+      const names = m[4].split(/\s*(?:or|OR|または|\/|／|、)\s*/).map(s => s.trim()).filter(Boolean);
+      const choices = [];
+      for (const n of names) {
+        const key = LOG_TO_KEY[n];
+        if (key) { if (!choices.includes(key)) choices.push(key); }
+        else unknown.add(n);
+      }
+      if (choices.length) rows.push({ no: toInt(m[1]), dice: [toInt(m[2]), toInt(m[3])], choices, picked: null });
+    }
+    return { rows, unknown: [...unknown] };
+  }
+
+  function buildTable() {
+    const text = $('diceLog').value;
+    const { rows, unknown } = parseLog(text);
+    const msg = $('parseMsg');
+    if (!rows.length) {
+      msg.className = 'msg error';
+      msg.textContent = 'ダイスログを解析できませんでした。「#1 [3,5]->(筋力 or 知力)」の形式か確認してください。';
+      return;
+    }
+    state.rows = rows;
+    msg.className = 'msg';
+    msg.textContent = `${rows.length}回分の成長を読み込みました。` + (unknown.length ? ` 不明な能力名: ${unknown.join(', ')}` : '');
+    $('growPanel').hidden = false;
+    renderTable();
+    renderSummary();
+    updateResult();
+  }
+
+  // ---- 表描画 ------------------------------------------------------------------
+  function renderHeader() {
+    const tr = $('growTable').tHead.rows[0];
+    while (tr.cells.length > 1) tr.deleteCell(1);
+    for (const s of STATS) {
+      const th = document.createElement('th');
+      th.textContent = s.name;
+      tr.appendChild(th);
+    }
+    $('thDice').textContent = state.sortAsc ? 'dice▼' : 'dice▲';
+  }
+
+  function renderTable() {
+    renderHeader();
+    const tbody = $('growTable').tBodies[0];
+    tbody.innerHTML = '';
+    const rows = [...state.rows].sort((a, b) => state.sortAsc ? a.no - b.no : b.no - a.no);
+    for (const row of rows) {
+      const tr = document.createElement('tr');
+      if (row.picked) tr.classList.add('done');
+      const tdNo = document.createElement('td');
+      tdNo.className = 'num';
+      tdNo.textContent = row.no;
+      tdNo.title = `[${row.dice.join(',')}]`;
+      tr.appendChild(tdNo);
+      for (const s of STATS) {
+        const td = document.createElement('td');
+        if (row.choices.includes(s.key)) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'cell-btn' + (row.picked === s.key ? ' on' : '') + (row.choices.length === 1 ? ' fixed' : '');
+          btn.textContent = s.name;
+          btn.title = `#${row.no} [${row.dice.join(',')}] → ${s.log}`;
+          btn.addEventListener('click', () => {
+            row.picked = row.picked === s.key ? null : s.key;
+            renderTable();
+            renderSummary();
+            updateResult();
+          });
+          td.appendChild(btn);
+        }
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+  }
+
+  // 今回の割り振りによる成長数
+  function pickedCounts() {
+    const c = Object.fromEntries(STATS.map(s => [s.key, 0]));
+    for (const r of state.rows) if (r.picked) c[r.picked]++;
+    return c;
+  }
+
+  function renderSummary() {
+    const t = $('sumTable');
+    t.innerHTML = '';
+    const counts = pickedCounts();
+    const addRow = (label, cls, cellFn) => {
+      const tr = document.createElement('tr');
+      if (cls) tr.className = cls;
+      const th = document.createElement('th');
+      th.textContent = label;
+      tr.appendChild(th);
+      for (const s of STATS) {
+        const td = document.createElement('td');
+        cellFn(td, s);
+        tr.appendChild(td);
+      }
+      t.appendChild(tr);
+    };
+    const numInput = (obj, key, onChange) => {
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.min = '0';
+      inp.value = obj[key];
+      inp.addEventListener('input', () => { obj[key] = toInt(inp.value); onChange(); });
+      return inp;
+    };
+    const refresh = () => { renderSummary(); updateResult(); };
+
+    // 技/体/心
+    const trBase = document.createElement('tr');
+    trBase.className = 'init';
+    trBase.innerHTML = '<th>技 / 体 / 心</th>';
+    for (const b of BASES) {
+      const td = document.createElement('td');
+      td.colSpan = 2;
+      td.appendChild(Object.assign(document.createElement('span'), { className: 'stat-label', textContent: b.name + ' ' }));
+      td.appendChild(numInput(state.base, b.key, refresh));
+      trBase.appendChild(td);
+    }
+    t.appendChild(trBase);
+
+    addRow('初期値', 'init', (td, s) => {
+      td.appendChild(Object.assign(document.createElement('span'), { className: 'stat-label', textContent: s.letter + ' ' }));
+      td.appendChild(numInput(state.init, s.key, refresh));
+    });
+    addRow('既存の成長', '', (td, s) => td.appendChild(numInput(state.grown, s.key, refresh)));
+    addRow('今回の成長', '', (td, s) => {
+      td.textContent = counts[s.key] ? `+${counts[s.key]}` : '0';
+      if (counts[s.key]) td.className = 'up';
+    });
+    addRow('合計', 'total', (td, s) => {
+      td.textContent = total(s);
+    });
+    addRow('ボーナス', '', (td, s) => {
+      const before = bonus(totalBefore(s));
+      const after = bonus(total(s));
+      td.textContent = `${after}(+${total(s) % 6})`;
+      if (after > before) { td.className = 'up'; td.title = `ボーナス ${before} → ${after}`; }
+    });
+
+    // 未選択数
+    const remain = state.rows.filter(r => !r.picked).length;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<th>未選択数</th><td colspan="6" style="text-align:left">${remain}${remain === 0 && state.rows.length ? ' （すべて割り振りました）' : ''}</td>`;
+    t.appendChild(tr);
+  }
+
+  const totalBefore = s => state.base[s.base] + state.init[s.key] + state.grown[s.key];
+  const total = s => totalBefore(s) + pickedCounts()[s.key];
+  const bonus = v => Math.floor(v / 6);
+
+  // ---- 結果テキスト -----------------------------------------------------------
+  function updateResult() {
+    const counts = pickedCounts();
+    const lines = [];
+    if (state.charName) lines.push(`【${state.charName}】成長結果`);
+    for (const s of STATS) {
+      const b0 = bonus(totalBefore(s)), b1 = bonus(total(s));
+      let line = `${s.log}: ${totalBefore(s)} → ${total(s)}（成長${s.letter}=${state.grown[s.key] + counts[s.key]}）ボーナス ${b0}`;
+      if (b1 !== b0) line += ` → ${b1}`;
+      lines.push(line);
+    }
+    const remain = state.rows.filter(r => !r.picked).length;
+    if (state.rows.length) {
+      lines.push(`割り振り: ${state.rows.length - remain}/${state.rows.length}回` + (remain ? `（未選択 ${remain}回）` : ''));
+      lines.push('ゆとシート成長欄への入力値: ' + STATS.map(s => `${s.letter}=${state.grown[s.key] + counts[s.key]}`).join(' '));
+    }
+    $('resultOut').textContent = lines.join('\n');
+  }
+
+  async function copyResult() {
+    const text = $('resultOut').textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      $('copyMsg').textContent = 'コピーしました';
+    } catch {
+      $('copyMsg').textContent = 'コピーできませんでした。テキストを選択してコピーしてください。';
+    }
+    setTimeout(() => { $('copyMsg').textContent = ''; }, 2000);
+  }
+
+  // ---- イベント ----------------------------------------------------------------
+  $('btnLoad').addEventListener('click', loadFromUrl);
+  $('sheetUrl').addEventListener('keydown', e => { if (e.key === 'Enter') loadFromUrl(); });
+  $('btnJson').addEventListener('click', loadFromJsonText);
+  $('btnParse').addEventListener('click', buildTable);
+  $('btnAutoSingle').addEventListener('click', () => {
+    for (const r of state.rows) if (r.choices.length === 1) r.picked = r.choices[0];
+    renderTable(); renderSummary(); updateResult();
+  });
+  $('btnClear').addEventListener('click', () => {
+    for (const r of state.rows) r.picked = null;
+    renderTable(); renderSummary(); updateResult();
+  });
+  $('thDice').addEventListener('click', () => { state.sortAsc = !state.sortAsc; renderTable(); });
+  $('btnCopy').addEventListener('click', copyResult);
+
+  // 初期表示（シート未読み込みでも手入力で使えるように）
+  renderSummary();
+  updateResult();
+})();
+</script>
+</body>
+</html>
